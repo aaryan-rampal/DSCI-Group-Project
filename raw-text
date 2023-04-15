@@ -1,0 +1,109 @@
+# Exploration of the Heart Disease Data Set
+## Introduction
+The dataset is taken from the Cleveland, Ohio database. This dataset is a collaboration with physicians from Hungary, Switzerland, Virginia, and Ohio. This database describes 76 attributes, but all experiments that have been published use only 14 as a reference. The `num` column describes the presence of heart disease in the patient. The `col_vessels` column indicates the number of major blood vessels coloured by fluoroscopy. The `slope` column indicates the slope of the peak exercise ST segment (1 = upslope, 2 = flat, 3 = downslope). The `st_depression` column indicates the ST depression induced by exercise relative to rest. The `ex_ang` column indicates whether the patient has exercise induced angina (1 = yes, 0 = no). The `max_hr` column describes indicates a numerical value of the maximum heart rate achieved. The `rest_ecg` indicates the resting electrocardiac results (0 = normal, 1 = ST-T wave abnormality, 2 = probable/definite left ventricular hypertrophy). The `fbs` column indicates whether the patient has a fasting blood sugar of greater than 120 mg/dl (1 = true, 0 = false). The `chol` column describes the serum cholesterol level in mg/dl per patient. The `rest_bps` indicates the resting blood pressure (mm Hg). The `chest_pain` column describes the chest pain in the patient with varying types of anginas (1 = typical angina, 2 = atypical angina, 3 = nonanginal pain, 4 = asymptomatic). The `sex` column indicates the gender of the patient (1 = male, 0 = female). The `defect` column refers to the defect of the heart (3 = normal, 6 = defect, 7 = reversible defect). Lastly, the `age` column indicates the age of the patient. 
+
+
+
+The question we will try to answer is whether a patient will be diagnosed with heart disease, and it's severity. We have a number of predictors, and we will use the technique of backward selection to narrow down our predictors to the few attributes that allow us to predict this most accurately.
+
+
+
+## Methods & Results
+### Read the dataset, clean and wrangle the data into a tidy format.
+Download the dataset from the url and store it into a local file.
+Read the file into the dataframe `heart_disease_original`. We will need to manually specify the column types, which are given on the database website.
+Now, we need to wrangle `heart_disease_original` by removing all rows that contain a question mark, filtering essentially NA values and changing the type of `col_vessels` and `defect` to be doubles.
+Let's check the distribution for our target variable `num`. 
+It looks like there is an uneven proportion of data for `num`. There is a proportionally high amount of rows where `num` is 0 vs where `num` is 1, 2, 3, or 4. Due to the lack of distribution of data, we will likely not get a very accurate k-nn model. We will solve this problem later by upsampling our training data. For now, let's continue as normal. 
+### Split the dataset into training set and testing set.
+We will split our dataset `heart_diease` into a testing and training set. We will upsample the training set, which will hopefully increase the accuracy of our model.
+Now, we will use the `upSample` function from `caret` to upsample all the minority classes in `heart_disease_training` to have the same amount of observations as the majority class. 
+Now we will compare the distribution of `num` between our original training data and our upsampled training data.
+As we can see, in `heart_disease_training`, the distribution of `num` is quite uneven which is what we expected given the distribution of `num` in the original data set. However, in `heart_disease_training_upsampled`, the distribution of `num` is exactly 20% for each factor. This indicates to us that upsampling worked properly. 
+### Selecting Predictors
+
+
+
+#### GGPairs
+
+
+
+To choose our predictor variables, we will use `ggpairs` to find the correlation between all the variables and our factor variable `num`. We will then decide which variable seems to be significant between determining between different factors of `num`. 
+
+
+
+However, since we have a lot of predictor variables, to make it easy to view 14 different graphs, we will break our dataset into 2 smaller datasets and view them separately to make it more legible.
+
+We will mainly be looking at the diagonal curves of these graphs. 
+
+
+
+For the first graph, it looks like `age` and `chol` show a significant difference between different types of `num`. Surprisingly, it doesn't seem like `chest_pain` is a good predictor between the different types of `num`. We can see a big blue spike (correlating to `num = 3`) at high values of `chest_pain` but otherwise, all the curves look quite similar. Furthermore, it's tough to determine whether `rest_ecg` is a good predictor since even though there seems to be separation between the curves, the curves all follow the same trend; they rise and fall at the same locations. All the other predictors seem to be bad at differentiating between the different curves.
+
+
+
+For the second graph, it looks like `max_hr`, `slope`, `col_vessels` and `defect` are good predictors, whereas it's tough to determine whether `st_depression` is good or not. It also tends to rise and fall at the same location. 
+
+
+
+To qualitatively determine which predictors to use, we will use the method of backward selection.
+#### Backward Selection
+Section 6.8.3 of the data science textbook briefly mentions the method of forward selection in R. However, the method it shows is far too manual. The more manual we make our program, the more prone it is to errors. Therefore, we will be using the `MASS` library to import a few functions which allow us to do the same thing.
+
+
+
+ Therefore, instead of forward selection, we will use backward selection to remove one predictor at a time. Then, we will check if the AIC of the new model goes down. We will remove the predictor which lowers the AIC the most until we get to a point where removing predictors increases AIC. 
+
+ 
+
+AIC is a measure used to evaluate the goodness of fit of a statistical model. It takes into account both the complexity of the model and its performance in explaining the data. The main goal of AIC is to find the best balance between model complexity and its ability to explain the observed data. Lower AIC values indicate better model performance, while higher AIC values indicate worse model performance.
+
+
+
+During the backward selection process, we remove the predictor that, when removed, results in the lowest AIC value for the reduced model. We continue to remove predictors one by one, stopping when any further removal of predictors would result in an increase in AIC. By removing predictors that reduce the AIC of the model, we can identify the combination of predictors that provides the best balance between model complexity and predictive accuracy.
+Looking at the output of `stepAIC`, it looks like it suggests that `sex` and `st_depression` were indeed good predictors for our model. Moreover, it also suggests the inclusion of `chest_pain` and `ex_ang` as a predictor. Looking at the graph, it does seem fair to not include `ex_ang` however it looks like `chest_pain` is a toss up. We will veer on the side of caution and not include it because given the amount of variables in the database, the fewer we have, the better our model will be.
+
+
+
+Personally, we still believe that `sex` is not a good predictor due to the visual confirmation given by the `ggpairs` function, so we will use all the predictors that were given to use by the `stepAIC` function except for `sex`.
+### Creation of k-nn Model
+Since we don't know the best value of $k$ to use for the model, we will use `vfold` and the `tune()` function to determine the accuracy of the model at different values of $k$. Firstly, we will create the recipe.
+We will start the $k$ value at 1 and set the upper limit to 70. We chose the upper limit of 70 since it is close enough to 120 (the majority classifier) that our model will naturally start losing accuracy. In an ideal world, we would have the upper limit at exactly the majority classifier but doing `vfold` with 100+ neighbours takes a long computation time.
+It looks like a neighbour count of around 41-46 gives us the highest accuracy. To further hone in on the exact neighbour count which gives us the maximal accuracy, we will repeat this process once more with a more precise range for our k values.
+We will now plot the accuracy vs the neighbour count to get a better idea of what this data looks like.
+It looks like $k = 38$ gives the highest accuracy value, which tapers and rises all the way to $k = 43$. From there it tapers off to a lower accuracy.
+### Final Model with Known K-Value
+It looks like our final model accuracy is 59%. If we remember from before, our majority classifier was `num = 0` which made up of 54% of the original data. This means that our model's accuracy improved upon just guessing every patient to have no heart disease by 5%. This may not seem like much, but due to the un-uniformity of our data, it makes sense that we did not achieve an incredibly accurate model.
+
+
+
+Let's visualize how our confusion matrix looks like.
+It looks like our model is extremely accurate at guessing when the patient has no heart disease. There was only 1 case where the patient did not have heart disease but our model assumed they did. However, where our model struggles is classifying patients with heart disease. For a `num` value of 2 and 3, our model only correctly classified once whereas it was never accurate in correctly classifying a `num` value of 4. This makes sense, since we had an under-representation of the `num` values of 1, 2, 3, and 4 in our original data which we had to compensate for by upsampling.
+## Discussion
+Our model used the k-nearest neighbours algorithm with the data set of Cleveland heart disease patients to come up with an accuracy of 59% when determining the presence or lack thereof of heart disease (and the type of heart disease detected). Since the majority classifier in the data was 54%, our model improved on the majority classifier by 5%. If we look at the confusion matrix, our model is very good at determining cases where the patient had no heart disease. This was to be expected given the oversampling of cases in the data set where the patient had no heart disease.
+
+
+
+These findings can be important to future studies or can be put to use at current medical institutions. However, we would need for this model to be a lot more accurate than 59% before we start seeing real life usage of it. We believe that firstly, more data needs to be collected. Somewhere in the level of `n = 1000-5000`. Then, we can possibly see a highly accurate models which could be used to quickly classify patients. If the model predicts any patients with `num = 3` or `num = 4`, we know then that there is a high possibility that this patient has severe heart disease and should be checked with promptly. 
+
+
+
+Future questions and research directions could include:
+
+
+
+1. How can we improve the accuracy of the model further? Are there other machine learning algorithms or techniques that might yield better results with this dataset, such as logistic regression, support vector machines, or deep learning?
+
+2. What additional features or predictors could be included in the analysis to improve the model's performance? Are there any other medical tests or patient characteristics that might be relevant in predicting heart disease?
+
+3. How does the model's performance change when trained on a larger, more diverse dataset? Would collecting data from a wider variety of sources or locations help improve the model's generalizability?
+
+4. How can we validate the model's performance in real-world settings? Can we set up clinical trials or partnerships with medical institutions to test the model's predictions against actual patient outcomes?
+
+5. What are the ethical implications of using data science algorithms in healthcare, particularly in the context of predicting heart disease? How can we ensure that the models do not perpetuate biases or lead to unfair treatment of patients?
+
+6. How can the model be integrated into existing healthcare workflows and systems? What changes might need to be made to the model or the way it is used to ensure that it can be effectively employed by medical professionals?
+
+
+
+By addressing these questions in future studies, we can continue to refine the predictive model and better understand its potential applications and limitations in the context of heart disease diagnosis and treatment.
